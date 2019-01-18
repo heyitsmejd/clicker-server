@@ -15,18 +15,15 @@ app.use( bodyParser.json() );       // to support JSON-encoded bodies
 app.use(bodyParser.urlencoded({     // to support URL-encoded bodies
   extended: true
 }));
+var passport = require('passport')
+  , LocalStrategy = require('passport-local').Strategy;
 mongoose.connect(mongoDB, { useNewUrlParser: true });
-connectionOptions = 
 // Get Mongoose to use the global promise library
 mongoose.Promise = global.Promise;
 //Get the default connection
 var db = mongoose.connection;
 var sessionStore = new mongoStore({
 mongooseConnection: db });
-
-
-var passport = require('passport')
-  , LocalStrategy = require('passport-local').Strategy;
 app.use((req, res, next) => {
    res.header('Access-Control-Allow-Origin', '*');
    res.header('Access-Control-Allow-Methods', 'GET,POST,DELETE');
@@ -35,7 +32,6 @@ app.use((req, res, next) => {
 });
 var passport = require('passport')
   , LocalStrategy = require('passport-local').Strategy;
-
 io.use(passportSocketIo.authorize({
   cookieParser: cookieParser,       // the same middleware you registrer in express
   key:          'express.sid',       // the name of the cookie where express/connect stores its session_id
@@ -44,7 +40,8 @@ io.use(passportSocketIo.authorize({
   success:      onAuthorizeSuccess,  // *optional* callback on success - read more below
   fail:         onAuthorizeFail,     // *optional* callback on fail/error - read more below
 }));
-
+app.use(passport.initialize());
+app.use(passport.session());
 function onAuthorizeSuccess(data, accept){
   console.log('successful connection to socket.io');
 
@@ -75,8 +72,7 @@ function onAuthorizeFail(data, message, error, accept){
   // this error will be sent to the user as a special error-package
   // see: http://socket.io/docs/client-api/#socket > error-object
 }
-app.use(passport.initialize());
-app.use(passport.session()); // persistent login sessions
+
 
 
 var User = require('./models/User');
@@ -97,8 +93,9 @@ db.on('error', console.error.bind(console, 'MongoDB connection error:'));
     passport.use('local', new LocalStrategy(
     function(username, password, done) { // callback with email and password from our form
         // find a user whose email is the same as the forms email
+        console.log(io.sockets.connected[socket.id])
         // we are checking to see if the user trying to login already exists
-        User.findOne({ 'username' :  username }, function(err, user) {
+        User.findOneAndUpdate({ 'username' :  username }, {$set: { 'socketId' : 'test' } },function(err, user) {
             // if there are any errors, return the error before anything else
             if (err)
                 return done(err);
@@ -106,12 +103,11 @@ db.on('error', console.error.bind(console, 'MongoDB connection error:'));
             // if no user is found, return the message
             if (!user)
                 return done(null, false); // req.flash is the way to set flashdata using connect-flash
-
             // if the user is found but the password is wrong
             if (!user.validPassword(password))
                 return done(null, false); // create the loginMessage and save it to session as flashdata
-
             // all is well, return successful user
+            console.log(user)
             return done(null, user);
         });
 
@@ -141,15 +137,9 @@ app.post('/login', (req,res,next)=> {
 
                 req.logIn(user, function(err) {
                  if (err) { return res.send(err); }
-                	console.log(req.user)
-	if(req.user)
-	{
-		userData = req.user
-		io.sockets.emit('LOGIN', req.user)
-	}
-	
-	console.log('user connected')
-                res.redirect('/start')
+                console.log(req.user)
+	              console.log('user connected')
+                io.sockets.emit('LOGIN', req.user)
               });
 
             }
@@ -159,7 +149,7 @@ app.get('/', (req,res) => {
 	res.send('Please login or register.')
 })
 app.get('/start', (req, res) => {
-
+  res.send('ok')
 })
 let createNewUser = (userInfo) => new Promise((resolve, reject) => {
     User.findOne({ 'username' :  userInfo.username }, function(err, user) {
@@ -183,9 +173,16 @@ let createNewUser = (userInfo) => new Promise((resolve, reject) => {
 })
 
 io.on('connection', function(socket) {
-	    console.log(socket.id)
+      var clientId = '';
+      socket.on('CheckUser', data => {
+          User.findOne({ socketId: socket.id}, function(err, user) {
+            clientId = user.socketId
+            console.log(err)
+            console.log(user.username, user.socketId)
+          });
+      })
 	    socket.on('DAMAGE', data => {
-	    	socket.emit('ATTACK', { amount : data.amount, socketId : socket.id})
+	    	io.to(clientId).emit('ATTACK', { amount : data.amount, socketId : socket.id})
 	    	console.log('user hit a monster for ' + data.amount + '!')
 	    })
 	    // socket.on('LOGIN', data => {
@@ -205,14 +202,14 @@ io.on('connection', function(socket) {
 	    		dps: userData.dps
 	    	}
 	    }, function(err, user) {
-	    	socket.emit('GOLD', { goldAmount : user.gold, level : user.level, username: user.username})	
+	    	io.to(clientId).emit('GOLD', { goldAmount : user.gold, level : user.level, username: user.username})	
         });
 	    })
 	    socket.on('KILL-MONSTER', data => {
 	    	let amount =  Math.round(((data.monsterHP / 15) * Math.floor(((0 / 100) + 1))));
 	    	userData.gold = userData.gold + amount
 	    	console.log(`${userData.username} killed a monster and earned ${amount} gold!`)
-	    	socket.emit('GOLD', { goldCount : userData.gold, socketId : socket.id, username: userData.username})
+	    	io.to(clientId).emit('GOLD', { goldCount : userData.gold, socketId : socket.id, username: userData.username})
 	    })
 	   
 

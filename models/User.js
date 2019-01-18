@@ -18,7 +18,7 @@ let userSchema = new Schema({
     dpcBonus: {type: Number, default: 0},
     reborns: {type: Number, default: 0},
     achievements: {type: mongoose.Mixed},
-    socketId: {type: String}
+    socketId: {type: String, default: 0}
 });
 
 // methods ======================
