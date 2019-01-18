@@ -3,11 +3,28 @@ const app = express();
 const mongoose = require('mongoose')
 const mongoDB = 'mongodb://127.0.0.1/clicker';
 const bodyParser = require('body-parser')
+const cookieParser = require('cookie-parser')
+const server = app.listen(3001, function() {
+    console.log('server running on port 3001');
+});
 const session = require('express-session')
+const io = require('socket.io')(server);
+const mongoStore     = require('connect-mongo')(session); 
+const passportSocketIo = require("passport.socketio");
 app.use( bodyParser.json() );       // to support JSON-encoded bodies
 app.use(bodyParser.urlencoded({     // to support URL-encoded bodies
   extended: true
 }));
+mongoose.connect(mongoDB, { useNewUrlParser: true });
+connectionOptions = 
+// Get Mongoose to use the global promise library
+mongoose.Promise = global.Promise;
+//Get the default connection
+var db = mongoose.connection;
+var sessionStore = new mongoStore({
+mongooseConnection: db });
+
+
 var passport = require('passport')
   , LocalStrategy = require('passport-local').Strategy;
 app.use((req, res, next) => {
@@ -18,34 +35,66 @@ app.use((req, res, next) => {
 });
 var passport = require('passport')
   , LocalStrategy = require('passport-local').Strategy;
-app.use(session({
-    secret: 'eminem', // session secret
-    resave: true,
-    saveUninitialized: true
+
+io.use(passportSocketIo.authorize({
+  cookieParser: cookieParser,       // the same middleware you registrer in express
+  key:          'express.sid',       // the name of the cookie where express/connect stores its session_id
+  secret:       'eminem',    // the session_secret to parse the cookie
+  store:        sessionStore,        // we NEED to use a sessionstore. no memorystore please
+  success:      onAuthorizeSuccess,  // *optional* callback on success - read more below
+  fail:         onAuthorizeFail,     // *optional* callback on fail/error - read more below
 }));
+
+function onAuthorizeSuccess(data, accept){
+  console.log('successful connection to socket.io');
+
+  // The accept-callback still allows us to decide whether to
+  // accept the connection or not.
+  accept(null, true);
+
+  // OR
+
+  // If you use socket.io@1.X the callback looks different
+  accept();
+}
+
+function onAuthorizeFail(data, message, error, accept){
+  if(error)
+    throw new Error(message);
+  console.log('failed connection to socket.io:', message);
+
+  // We use this callback to log all of our failed connections.
+  accept(null, false);
+
+  // OR
+
+  // If you use socket.io@1.X the callback looks different
+  // If you don't want to accept the connection
+  if(error)
+    accept(new Error(message));
+  // this error will be sent to the user as a special error-package
+  // see: http://socket.io/docs/client-api/#socket > error-object
+}
 app.use(passport.initialize());
 app.use(passport.session()); // persistent login sessions
-mongoose.connect(mongoDB, { useNewUrlParser: true });
-// Get Mongoose to use the global promise library
-mongoose.Promise = global.Promise;
-//Get the default connection
-var db = mongoose.connection;
+
+
 var User = require('./models/User');
 db.on('error', console.error.bind(console, 'MongoDB connection error:'));
-const server = app.listen(3001, function() {
-    console.log('server running on port 3001');
-});
     passport.serializeUser(function(user, done) {
-        done(null, user.id);
+        done(null, user._id);
     });
 
     // used to deserialize the user
     passport.deserializeUser(function(id, done) {
-        User.findById(id, function(err, user) {
+    	console.log('checking')
+        User.findOne({_id: id}, function(err, user) {
+        	console.log(err)
+        	console.log(user)
             done(err, user);
         });
     });
-    passport.use('local-login', new LocalStrategy(
+    passport.use('local', new LocalStrategy(
     function(username, password, done) { // callback with email and password from our form
         // find a user whose email is the same as the forms email
         // we are checking to see if the user trying to login already exists
@@ -68,7 +117,7 @@ const server = app.listen(3001, function() {
 
     }));
 
-const io = require('socket.io')(server);
+
 app.post('/register', (req, res) => {
 	createNewUser(req.body)
 	.then((returned) => {
@@ -78,30 +127,40 @@ app.post('/register', (req, res) => {
 		res.send('user exists')
 	})
 })
-app.post('/login',
-  passport.authenticate('local-login', { successRedirect: '/start',
-                                   failureRedirect: '/'
-                                   })
-);
+let userData = '';
+app.post('/login', (req,res,next)=> {
+        passport.authenticate('local', function(err, user, info ) {
+            if (err) {
+                console.log("inside error");
+            return next(err); 
+            }
+            if (!user) {
+                console.log("No user");
+                res.status(401).send("not user");
+            } else {  
+
+                req.logIn(user, function(err) {
+                 if (err) { return res.send(err); }
+                	console.log(req.user)
+	if(req.user)
+	{
+		userData = req.user
+		io.sockets.emit('LOGIN', req.user)
+	}
+	
+	console.log('user connected')
+                res.redirect('/start')
+              });
+
+            }
+        })(req, res, next); 
+     });
 app.get('/', (req,res) => {
 	res.send('Please login or register.')
 })
 app.get('/start', (req, res) => {
-	console.log('user connected')
-})
-	io.on('connection', function(socket) {
-	    console.log(socket.id)
-	    socket.on('DAMAGE', data => {
-	    	socket.emit('ATTACK', { amount : data.amount, socketId : socket.id})
-	    	console.log('user hit a monster for ' + data.amount + '!')
-	    })
 
-	    socket.on('KILL-MONSTER', data => {
-	    	let amount =  Math.round(((data.monsterHP / 15) * Math.floor(((0 / 100) + 1))));
-	    	console.log('user killed a monster and earned ' + amount + ' gold!')
-	    	socket.emit('GOLD', { goldAmount : amount, socketId : socket.id})
-	    })
-	});
+})
 let createNewUser = (userInfo) => new Promise((resolve, reject) => {
     User.findOne({ 'username' :  userInfo.username }, function(err, user) {
         // if there are any errors, return the error
@@ -123,3 +182,38 @@ let createNewUser = (userInfo) => new Promise((resolve, reject) => {
     })
 })
 
+io.on('connection', function(socket) {
+	    console.log(socket.id)
+	    socket.on('DAMAGE', data => {
+	    	socket.emit('ATTACK', { amount : data.amount, socketId : socket.id})
+	    	console.log('user hit a monster for ' + data.amount + '!')
+	    })
+	    // socket.on('LOGIN', data => {
+	    // 	console.log('user killed a monster and earned ' + amount + ' gold!')
+	    // 	socket.emit('LOGIN', { user: req.user })
+	    // })
+	    socket.on('LEVEL-CHANGE', data => {
+	    	console.log('saving user ' + userData.username)
+	    	userData.level++
+	    	console.log('New level is : ' + userData.level)
+	    User.findOneAndUpdate({_id: userData.id}, {
+	    	$set: {
+	    		level : userData.level,
+	    		gold : userData.gold,
+	    		monsterCount : userData.monsterCount,
+	    		dpc: userData.dpc,
+	    		dps: userData.dps
+	    	}
+	    }, function(err, user) {
+	    	socket.emit('GOLD', { goldAmount : user.gold, level : user.level, username: user.username})	
+        });
+	    })
+	    socket.on('KILL-MONSTER', data => {
+	    	let amount =  Math.round(((data.monsterHP / 15) * Math.floor(((0 / 100) + 1))));
+	    	userData.gold = userData.gold + amount
+	    	console.log(`${userData.username} killed a monster and earned ${amount} gold!`)
+	    	socket.emit('GOLD', { goldCount : userData.gold, socketId : socket.id, username: userData.username})
+	    })
+	   
+
+});
