@@ -142,9 +142,7 @@ var saveUser = (user) => new Promise((resolve, reject) => {
         $set: {
             level : user.level,
             gold : user.gold,
-            monsterCount : user.monsterCount,
-            dpc: user.dpc,
-            dps: user.dps
+            monsterCount : user.monsterCount
         }}, (err, user) => {
         resolve(user)
     })
