@@ -6,7 +6,8 @@ let userSchema = new Schema({
     email: {type: String, required: true},
     password: {type: String, required: true},
     currentLevel: {type: Number},
-    heroes: {type: mongoose.Mixed},
+    heroes: {type: mongoose.Mixed, default: []},
+    nextHero: {type: mongoose.Mixed, default: {}},
     gold: {type: Number, default: 0},
     goldBonus: {type: Number, default: 0},
     level: {type: Number, default: 1}, 
@@ -17,9 +18,9 @@ let userSchema = new Schema({
     dpsBonus: {type: Number, default: 0},
     dpcBonus: {type: Number, default: 0},
     reborns: {type: Number, default: 0},
-    achievements: {type: mongoose.Mixed},
+    achievements: {type: mongoose.Mixed, default: []},
     socketId: {type: String, default: 0}
-});
+},{ minimize: false });
 
 // methods ======================
 // generating a hash
