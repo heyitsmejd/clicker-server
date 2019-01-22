@@ -202,28 +202,31 @@ io.on('connection', function(socket) {
     })
     socket.on('BOSS-END', data => { //Unused for now.
         // Check if boss killed before time ended
-        if(data.bossKilled == true){
-            console.log('saving user ' + getUserData(socket.id).data.username)
-            getUserData(socket.id).data.level++
-            console.log('New level is : ' + getUserData(socket.id).data.level)
+        if(data.bossHP > 0){
+            getUserData(socket.id).data.bossKilled = false
+            console.log('User failed to defeat boss on level : ' + getUserData(socket.id).data.level)
+            console.log('Putting them back on previouss level at 10/10.')
+            getUserData(socket.id).data.level--
             let bossFight = false
             saveUser(getUserData(socket.id).data).then( returned => {
-                io.to(socket.id).emit('LEVEL-CHANGE', { 
-                  monsterCount : 1,
-                  goldCount : getUserData(socket.id).data.gold, 
+                io.to(socket.id).emit('DOWN-LEVEL', { 
+                  monsterCount : 10,
                   level : getUserData(socket.id).data.level, 
-                  username: getUserData(socket.id).data.username,
-                  bossFight: bossFight
+                  bossKilled: getUserData(socket.id).data.bossKilled
                 })  
             }).catch(e => console.log(e));            
         }
         // If not, repeat previous round at 10/10... Have button shown to go back to boss.
 
         // If so, go to new round, change mons count to 1/10 and start new level.
+        // if(data.bossHP <= 0){
+
+        // }
     })
     socket.on('BUY-CHAR', data => {
      var buyingHero = heroes.find( slot => slot.name == data.name )
         buyHero(getUserData(socket.id).data._id, buyingHero.name, buyingHero.baseCost, socket.id).then(res => {
+            getUserData(socket.id).data.dps = res.dps
             io.to(socket.id).emit('BUY-CHAR', { bought : res.heroes, next: res.nextHero, gold: res.gold, dps : res.dps })
         }).catch(e => {
             //This should only happen if the user has the Hero
@@ -268,14 +271,19 @@ io.on('connection', function(socket) {
     socket.on('KILL-MONSTER', data => {
             console.log(data)
             if(!data.isBoss){
-            if(getUserData(socket.id).data.monsterCount == 11){
+                if(getUserData(socket.id).data.monsterCount == 11){
+                    getUserData(socket.id).data.monsterCount = 1
+                }
+                if(getUserData(socket.id).data.monsterCount < 11){
+                    getUserData(socket.id).data.monsterCount++
+                } else {
                 getUserData(socket.id).data.monsterCount = 1
+                }
             }
-            if(getUserData(socket.id).data.monsterCount < 11){
-                getUserData(socket.id).data.monsterCount++
-            }}else {
-                getUserData(socket.id).data.monsterCount = 1
+            if(getUserData(socket.id).data.bossKilled == false) {
+                getUserData(socket.id).data.monsterCount = 10
             }
+
 	    	    let amount =  Math.round(((data.monsterHP / 15) * Math.floor(((0 / 100) + 1))));
 	    	    getUserData(socket.id).data.gold = getUserData(socket.id).data.gold + amount
 	    	    console.log(`${getUserData(socket.id).data.username} killed a monster and earned ${amount} gold!`)
@@ -290,7 +298,7 @@ io.on('connection', function(socket) {
                 setTimeout(() => { 
                   io.to(socket.id).emit('READY', { canAttack: true});
                   console.log('sending!')
-                }, 2000);
+                }, 1000);
             }).catch(e => console.log(e));
     })
     socket.on('disconnect', data => {
