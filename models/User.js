@@ -19,7 +19,15 @@ let userSchema = new Schema({
     dpcBonus: {type: Number, default: 0},
     reborns: {type: Number, default: 0},
     achievements: {type: mongoose.Mixed, default: []},
-    socketId: {type: String, default: 0}
+    socketId: {type: String, default: 0},
+    inventory: {type: mongoose.Mixed, default: []},
+    currentMonster: {type: mongoose.Mixed, default: {}},
+    equippedWeapon : {type: mongoose.Mixed, default: {}},
+    equippedAmulet : {type: mongoose.Mixed, default: {}},
+    equippedRing : {type: mongoose.Mixed, default: {}},
+    equippedScroll : {type: mongoose.Mixed, default: {}},
+    tutorialComplete: {type: Boolean, default: false},
+    tutorialStep: {type: Number, default: 1}
 },{ minimize: false });
 
 // methods ======================
