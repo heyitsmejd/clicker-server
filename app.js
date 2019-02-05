@@ -74,16 +74,18 @@ passport.use('local', new LocalStrategy(
     });
 }));
 app.post('/api/register', (req, res) => {
-	createNewUser(req.body)
-	.then((returned) => {
-			res.redirect('/start')
+	createNewUser(req.body).then((returned) => {
+        console.log(returned)
+        console.log('!!!!!!!!!!!!!!!!!!!!!!!!!!')
+			res.send(req.body.username)
+
 	}).catch(e => {
-		console.log('user exists!')
-		res.send('user exists')
+        console.log(e)	
+        console.log('WTF')	
 	})
 })
 
-app.post('/api/login', (req,res,next)=> {
+app.post('/api/login', (req,res,next) => {
         passport.authenticate('local', function(err, user, info ) {
           console.log('-------------------')
             if (err) {
@@ -111,27 +113,32 @@ app.get('/', (req,res) => {
 app.get('/start', (req, res) => {
   res.send('ok')
 })
-let createNewUser = (userInfo) => new Promise((resolve, reject) => {
-    User.findOne({ 'username' :  userInfo.username }, function(err, user) {
-        // if there are any errors, return the error
-        if (err)
-        	console.log(err)
-        	reject(err)
-        // check to see if theres already a user with that email
-        if (user) {
-            reject(err)
-        } else {
-            var newUser            = new User();
-            newUser.username    = userInfo.username;
-            newUser.email    = userInfo.email;
-            newUser.nextHero = heroes[0]
-            newUser.password = newUser.generateHash(userInfo.password);
-			newUser.save(function(err) {
-                resolve(userInfo)
-            })
-        }                      
+const createNewUser = (userInfo) => {
+    var promise = new Promise((resolve, reject) => {
+        User.findOne({ 'username' :  userInfo.username }, function(err, user) {
+            // if there are any errors, return the error
+            if (err)
+            	console.log(err)
+            //	reject(err)
+            // check to see if theres already a user with that email
+            if (user) {
+                console.log('User already exists.')
+              //  reject(err)
+            } else {
+                var newUser            = new User();
+                newUser.username    = userInfo.username;
+                newUser.email    = userInfo.email;
+                newUser.nextHero = heroes[0]
+                newUser.password = newUser.generateHash(userInfo.password);
+    			newUser.save(function(error, result) {
+                    console.log(result)
+                    resolve(result)
+                })
+            }                      
+        })
     })
-})
+    return promise
+}
 var userData = [];
 var getUserData = (socket) => {
   return userData.find(i => i.socketId == socket)
@@ -139,24 +146,27 @@ var getUserData = (socket) => {
 var getUserHeroData = (id) => {
 
 }
-var saveUser = (user) => new Promise((resolve, reject) => {
-    User.findOneAndUpdate({_id : user.id}, {
-        $set: {
-            level : user.level,
-            gold : user.gold,
-            monsterCount : user.monsterCount,
-            inventory : user.inventory,
-            goldBonus : user.goldBonus,
-            dps : user.dps,
-            dpc : user.dpc,
-            equippedWeapon : user.equippedWeapon,
-            equippedAmulet : user.equippedAmulet,
-            equippedRing : user.equippedRing,
-            equippedScroll : user.equippedScroll
-        }}, (err, user) => {
-        resolve(user)
+var saveUser = (user) => {
+    var promise = new Promise((resolve, reject) => {
+        User.findOneAndUpdate({_id : user.id}, {
+            $set: {
+                level : user.level,
+                gold : user.gold,
+                monsterCount : user.monsterCount,
+                inventory : user.inventory,
+                goldBonus : user.goldBonus,
+                dps : user.dps,
+                dpc : user.dpc,
+                equippedWeapon : user.equippedWeapon,
+                equippedAmulet : user.equippedAmulet,
+                equippedRing : user.equippedRing,
+                equippedScroll : user.equippedScroll
+            }}, (err, user) => {
+            resolve(user)
+        })
     })
-})
+    return promise 
+}
 
 let currentUsers = 0;
 io.on('connection', function(socket) {
@@ -206,6 +216,28 @@ io.on('connection', function(socket) {
                     equippedWeapon : getUserData(socket.id).data.equippedWeapon, 
                     inventory : getUserData(socket.id).data.inventory,
                     dpc : getUserData(socket.id).data.dpc
+                })
+            }).catch(e => console.log(e));    
+        }
+        if(data.itemType == 2){
+            if(getUserData(socket.id).data.equippedRing.name){ //if equipped weapon exists, remove DPC bonus from it.
+                getUserData(socket.id).data.inventory.push(getUserData(socket.id).data.equippedRing)
+                getUserData(socket.id).data.goldBonus = getUserData(socket.id).data.goldBonus - getUserData(socket.id).data.equippedRing.bonusAmount
+                getUserData(socket.id).data.equippedRing = {}
+            }
+            let equipItem =  getUserData(socket.id).data.inventory.find(i => i.id === data.id)
+            let fileteredInv =  getUserData(socket.id).data.inventory.filter(i => i.id != data.id)
+            getUserData(socket.id).data.goldBonus = getUserData(socket.id).data.goldBonus + equipItem.bonusAmount
+            getUserData(socket.id).data.equippedRing = equipItem
+            getUserData(socket.id).data.inventory = fileteredInv // So we remove it from inventory after adding it to Equipped slot.
+            // then emit socket... and update DPC on client side... save user.
+            console.log(getUserData(socket.id).data.inventory)
+            console.log('========')
+            saveUser(getUserData(socket.id).data).then( returned => {
+                io.to(socket.id).emit('EQUIPPED', { 
+                    equippedRing : getUserData(socket.id).data.equippedRing, 
+                    inventory : getUserData(socket.id).data.inventory,
+                    goldBonus : getUserData(socket.id).data.goldBonus
                 })
             }).catch(e => console.log(e));    
         }
@@ -315,16 +347,28 @@ io.on('connection', function(socket) {
     })
     socket.on('KILL-MONSTER', data => {
             if(getUserData(socket.id).data.currentMonster.hasDrop){
-                let dropItem = ItemDb.items.find(i => i.id === getUserData(socket.id).data.currentMonster.hasDrop)
-                console.log('we should get item : ' + dropItem.name)
+                let dropItems = getUserData(socket.id).data.currentMonster.hasDrop
+                console.log(dropItems)
                 let itemDrops = []
-                itemDrops.push(dropItem)
-                getUserData(socket.id).data.inventory.push(dropItem)
-                io.to(socket.id).emit('ITEM-DROP', {
-                    inventory : getUserData(socket.id).data.inventory,
-                    itemDrops : itemDrops
+                dropItems.forEach(i => {
+                    let item = ItemDb.items.find(x => i == x.id)
+                    console.log(item)
+                    let roll = Math.floor(Math.random() * 101);
+                    console.log(roll, item.chance)
+                    if(roll <= item.chance){
+                        console.log('we should get item : ' + item.name)
+                        itemDrops.push(item)
+                        getUserData(socket.id).data.inventory.push(item)
+                    } else {
+                        console.log('we failed to roll on item : ' + item.name)
+                    }
                 })
-                console.log(getUserData(socket.id).data.inventory)
+                if(itemDrops.length > 0){
+                    io.to(socket.id).emit('ITEM-DROP', {
+                        inventory : getUserData(socket.id).data.inventory,
+                        itemDrops : itemDrops
+                    })
+                }
             }
         //    console.log(data)
             if(!data.isBoss){
@@ -342,7 +386,10 @@ io.on('connection', function(socket) {
             }
 
 	    	    let amount =  Math.round(((data.monsterHP / 15) * Math.floor(((0 / 100) + 1))));
-	    	    getUserData(socket.id).data.gold = getUserData(socket.id).data.gold + amount
+                if(getUserData(socket.id).data.goldBonus > 0){
+                  amount = Math.round(amount * getUserData(socket.id).data.goldBonus)
+                }
+	    	    getUserData(socket.id).data.gold = getUserData(socket.id).data.gold + amount 
 	    	    console.log(`${getUserData(socket.id).data.username} killed a monster and earned ${amount} gold!`)
             let currentLevelMon =  Monster.levels.find(level => level.level ==  getUserData(socket.id).data.level)
             getUserData(socket.id).data.currentMonster = currentLevelMon.list.find((i, index) => index == (getUserData(socket.id).data.monsterCount))                    
@@ -367,63 +414,66 @@ io.on('connection', function(socket) {
         console.log('Current Players: ' + currentUsers)
     })
 });
-let buyHero = (id, heroName, cost, socket) => new Promise((resolve, reject) => {
-    console.log(id, heroName, cost, socket)
-    User.findOne({ '_id' :  id }, function(err, user) {
-        // if there are any errors, return the error
-        if (err)
-            reject(err)
-        if (user) {
-            if(user.heroes.length > 0) {
-            let owned = user.heroes.filter(i => i.name == heroName)
-            if(owned.length > 0){
-                    console.log('user already owns hero!')
-                   return reject(user)
-            }}
-            
-            if(user.gold >= cost){
-                var buyIndex = heroes.findIndex( slot => slot.name == heroName )
-                if(buyIndex + 1 >= heroes.length) {
-                    User.findOneAndUpdate({ '_id' :  id }, {$push: { 
-                    heroes : heroes[buyIndex],
-                    },
-                    dps : user.dps + heroes[buyIndex].baseDps,
-                    gold : user.gold - cost,
-                    nextHero : {}
-                }, {new: true}, (e, result) => {
-                    if(e){
-                            reject(e)
-                        } else {
-                            let res = getUserData(socket).data
-                            console.log(result)
-                             return resolve(result)
-                        }
-                })
-                } else {
-                    User.findOneAndUpdate({ '_id' :  id }, {$push: { 
-                    heroes : heroes[buyIndex],
-                    },
-                    dps : user.dps + heroes[buyIndex].baseDps,
-                    gold : user.gold - cost,
-                    nextHero : heroes[buyIndex+1]
+let buyHero = (id, heroName, cost, socket) => {
+    var promise = new Promise((resolve, reject) => {
+        console.log(id, heroName, cost, socket)
+        User.findOne({ '_id' :  id }, function(err, user) {
+            // if there are any errors, return the error
+            if (err)
+                reject(err)
+            if (user) {
+                if(user.heroes.length > 0) {
+                let owned = user.heroes.filter(i => i.name == heroName)
+                if(owned.length > 0){
+                        console.log('user already owns hero!')
+                       return reject(user)
+                }}
+                
+                if(user.gold >= cost){
+                    var buyIndex = heroes.findIndex( slot => slot.name == heroName )
+                    if(buyIndex + 1 >= heroes.length) {
+                        User.findOneAndUpdate({ '_id' :  id }, {$push: { 
+                        heroes : heroes[buyIndex],
+                        },
+                        dps : user.dps + heroes[buyIndex].baseDps,
+                        gold : user.gold - cost,
+                        nextHero : {}
                     }, {new: true}, (e, result) => {
                         if(e){
-                            reject(e)
-                        } else {
-                            console.log(result)
-                            return resolve(result)
-                        }
-                        
+                                reject(e)
+                            } else {
+                                let res = getUserData(socket).data
+                                console.log(result)
+                                 return resolve(result)
+                            }
                     })
+                    } else {
+                        User.findOneAndUpdate({ '_id' :  id }, {$push: { 
+                        heroes : heroes[buyIndex],
+                        },
+                        dps : user.dps + heroes[buyIndex].baseDps,
+                        gold : user.gold - cost,
+                        nextHero : heroes[buyIndex+1]
+                        }, {new: true}, (e, result) => {
+                            if(e){
+                                reject(e)
+                            } else {
+                                console.log(result)
+                                return resolve(result)
+                            }
+                            
+                        })
+                    }
                 }
-            }
-             else {
-                console.log('user has insufficient funds')
-                 return reject(user)
-            }
-        }                      
+                 else {
+                    console.log('user has insufficient funds')
+                     return reject(user)
+                }
+            }                      
+        })
     })
-})
+ return promise
+}
 var heroes = [
       { name: 'Luna',
         fullImg: 'luna.jpg',

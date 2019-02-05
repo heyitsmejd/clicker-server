@@ -26,27 +26,31 @@ monster.levels = [
 	 	image: 'demongirl.png',
 	 	ability1 : null,
 	 	ability2 : null,
-	 	hasDrop: 1
+	 	hasDrop: [1,3]
  	},{
 	 	name : 'Laughing Boop',
 	 	image: 'demongirl3.png',
 	 	ability1 : null,
-	 	ability2 : null
+	 	ability2 : null,
+	 	hasDrop: [1,3]
  	},{
 	 	name : 'Forceful Boop',
 	 	image: 'demongirl2.png',
 	 	ability1 : null,
 	 	ability2 : null,
+	 	hasDrop: [1,3]
  	},{
 	 	name : 'Sexy Boop',
 	 	image: 'demongirl3.png',
 	 	ability1 : null,
-	 	ability2 : null
+	 	ability2 : null,
+	 	hasDrop: [1,3]
  	},{
 	 	name : 'Dangerous Boop',
 	 	image: 'demongirl.png',
 	 	ability1 : null,
-	 	ability2 : null
+	 	ability2 : null,
+	 	hasDrop: [1,3]
  	},{
 	 	name : 'Giggling Boop',
 	 	image: 'demongirl2.png',
@@ -80,7 +84,7 @@ monster.levels = [
 	 	image: 'demongirl.png',
 	 	ability1 : null,
 	 	ability2 : null,
-	 	hasDrop: 2
+	 	hasDrop: [2,3]
  	},{
 	 	name : 'Crazy Boop',
 	 	image: 'demongirl2.png',
