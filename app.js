@@ -93,7 +93,6 @@ app.post('/api/login', (req,res,next) => {
             if (!user) {
                 res.status(401).send("Invalid username or password.");
             } else {  
-                console.log('ok')
                 req.logIn(user, function(err) {
                  if (err) { return res.send(err); }
                  username = user.username
@@ -142,6 +141,10 @@ const getUserHeroData = (id) => {
 }
 const saveUser = (user) => {
     var promise = new Promise((resolve, reject) => {
+        // if(user.level % 5 == 0){
+        //     user.level--
+        //     user.monsterCount = 10
+        // }
         User.findOneAndUpdate({_id : user.id}, {
             $set: {
                 level : user.level,
@@ -209,6 +212,7 @@ io.on('connection', function(socket) {
                 getUserData(socket.id).data.monsterCount = 10
             }
             getUserData(socket.id).data.canLoot = true
+             getUserData(socket.id).data.failedBoss = null
             // getUserData(socket.id).data.nextHero = heroes[(getUserData(socket.id).data.heroes.length + 1)]
             getNewMonster(socket.id).then(() => {
             io.to(socket.id).emit('LOGIN', getUserData(socket.id).data)
@@ -216,8 +220,12 @@ io.on('connection', function(socket) {
                   io.to(socket.id).emit('READY', { canAttack: true});
                     getUserData(socket.id).data.canAttack = true
                     startAutoDPS(socket)
+                    if(getUserData(socket.id).data.level % 5 == 0){
+                        startBossTimer(socket)
+                    }
                   
             }, 1000);
+
 
             })
 
@@ -296,11 +304,7 @@ io.on('connection', function(socket) {
               })
               user.dps = totalDps
               io.to(socket.id).emit('LEVEL-CHAR', { hero : levelingHero, dps : totalDps, goldCount : user.gold })
-              console.log(`Leveled ${levelingHero.name} ${user.levelRate} times for a total cost of ${totalLevelCost}`)
-            }   
-            else {
-                console.log('not enough finds, we need ' + (user.gold - totalLevelCost) + ' more!')
-            }   
+            }    
     })
     socket.on('LEVEL-RATE', data => { //Unused for now.
         getUserData(socket.id).data.levelRate = data.levelRate
@@ -308,38 +312,31 @@ io.on('connection', function(socket) {
     socket.on('LOGIN', data => { //Unused for now.
 
     })
-    socket.on('BOSS-START', data => { //Start boss round
-        io.to(socket.id).emit('BOSS-START', { timeLimit : 30000 })
-        setTimeout(() => io.to(socket.id).emit('BOSS-END', {}), 30000)
-    })
     socket.on('BOSS-END', data => { //Unused for now.
         // Check if boss killed before time ended
-        if(getUserData(socket.id).data.currentMonster.monsterCurrentHP > 0){
-            getUserData(socket.id).data.bossKilled = false
-            console.log('User failed to defeat boss on level : ' + getUserData(socket.id).data.level)
-            console.log('Putting them back on previouss level at 10/10.')
-            if(getUserData(socket.id).data.level % 5 == 0){
-                 getUserData(socket.id).data.failedBoss = getUserData(socket.id).data.level
-                 getUserData(socket.id).data.level--
-            }
-            getNewMonster(socket.id).then(() => {
+        // if(getUserData(socket.id).data.currentMonster.monsterCurrentHP > 0){
+        //     getUserData(socket.id).data.bossKilled = false
+        //     if(getUserData(socket.id).data.level % 5 == 0){
+        //          getUserData(socket.id).data.failedBoss = getUserData(socket.id).data.level
+        //          getUserData(socket.id).data.level--
+        //     }
+        //     getNewMonster(socket.id).then(() => {
 
-                 getUserData(socket.id).data.bossFight = false
-                saveUser(getUserData(socket.id).data).then( returned => {
-                    io.to(socket.id).emit('DOWN-LEVEL', { 
-                      monsterCount : 10,
-                      level : getUserData(socket.id).data.level, 
-                      bossKilled: getUserData(socket.id).data.bossKilled,
-                      currentMonster : getUserData(socket.id).data.currentMonster
-                    })  
-                }).catch(e => console.log(e)); 
-            }) 
+        //          getUserData(socket.id).data.bossFight = false
+        //         saveUser(getUserData(socket.id).data).then( returned => {
+        //             io.to(socket.id).emit('DOWN-LEVEL', { 
+        //               monsterCount : 9,
+        //               level : getUserData(socket.id).data.level, 
+        //               bossKilled: getUserData(socket.id).data.bossKilled,
+        //               currentMonster : getUserData(socket.id).data.currentMonster
+        //             })  
+        //         }).catch(e => console.log(e)); 
+        //     }) 
            
-        }
-        if(getUserData(socket.id).data.currentMonster.monsterCurrentHP <= 0){
-            console.log('user killed the bosss!')
-            getUserData(socket.id).data.failedBoss = false;
-        }
+        // }
+        // if(getUserData(socket.id).data.currentMonster.monsterCurrentHP <= 0){
+        //     getUserData(socket.id).data.failedBoss = false;
+        // }
         // If not, repeat previous round at 10/10... Have button shown to go back to boss.
 
         // If so, go to new round, change mons count to 1/10 and start new level.
@@ -360,50 +357,13 @@ io.on('connection', function(socket) {
             console.log(e)
         })
      })
-    socket.on('LEVEL-CHANGE', data => {
-            // getUserData(socket.id).data.monsterCount = 1
-  	        console.log('saving user ' + getUserData(socket.id).data.username)
-  	        getUserData(socket.id).data.level++
-  	        console.log('New level is : ' + getUserData(socket.id).data.level)
-             getUserData(socket.id).data.bossFight = data.isBoss
-            getNewMonster(socket.id).then(() => {
-            if(getUserData(socket.id).data.level % 5 === 0)
-            {
-                console.log('Boss level')
-                getUserData(socket.id).data.bossFight = true
-                saveUser(getUserData(socket.id).data).then( returned => {
-                    io.to(socket.id).emit('LEVEL-CHANGE', { 
-                      monsterCount : 1,
-                      goldCount : getUserData(socket.id).data.gold, 
-                      level : getUserData(socket.id).data.level, 
-                      username: getUserData(socket.id).data.username,
-                      bossFight: getUserData(socket.id).data.bossFight,
-                      currentMonster: getUserData(socket.id).data.currentMonster
-                    })  
-                }).catch(e => console.log(e));
-            } else {
-                console.log('Regular level')
-                getUserData(socket.id).data.bossFight = false
-                saveUser(getUserData(socket.id).data).then( returned => {
-                    io.to(socket.id).emit('LEVEL-CHANGE', { 
-                      monsterCount : 1,
-                      goldCount : getUserData(socket.id).data.gold, 
-                      level : getUserData(socket.id).data.level, 
-                      username: getUserData(socket.id).data.username,
-                      bossFight: getUserData(socket.id).data.bossFight,
-                      currentMonster: getUserData(socket.id).data.currentMonster
-                    })  
-                }).catch(e => console.log(e));                
-            }
-        }) 
-    })
     socket.on('RESTART-BOSS', data => {
-        if(!getUserData(socket.id).data.bossFight){
-        console.log('trying to find boss..', getUserData(socket.id).data.failedBoss)
 
         if(getUserData(socket.id).data.failedBoss){
             getUserData(socket.id).data.bossFight = true
+            startBossTimer(socket)
             getUserData(socket.id).data.level = getUserData(socket.id).data.failedBoss
+            getUserData(socket.id).data.failedBoss = null;
             getNewMonster(socket.id).then(() => {
                     io.to(socket.id).emit('LEVEL-CHANGE', { 
                       monsterCount : 1,
@@ -413,7 +373,7 @@ io.on('connection', function(socket) {
                     })   
             })
             
-        }}
+        }
     })
 
     socket.on('disconnect', data => {
@@ -431,19 +391,49 @@ io.on('connection', function(socket) {
         console.log('Current Players: ' + currentUsers)
     })
 });
+const startBossTimer = (socket) => {
+            getUserData(socket.id).data.bossFight = true;
+            console.log('starting boss timer...')
+            var endTime = new Date(); 
+            endTime = new Date(endTime .getTime() + 30000);
+            var interval = setInterval(function() {
+                    var now = new Date();
+                    var distance = endTime - now;
+                    if(distance < 0)
+                    {
+                        distance = 0
+                    }
+                    io.to(socket.id).emit('BOSS-TIMER', { currentTime : (distance / 1000).toFixed(2)});   
+                    if(!getUserData(socket.id).data.bossFight) {
+
+                        console.log('boss fight is over')
+                        // document.getElementById("boss-timer").innerHTML = "";
+                        
+                        clearInterval(interval)
+                    }
+                    else if(now > endTime)
+                    {
+                        failedBoss(socket)
+                        console.log('times up, user failed.')
+                        // document.getElementById("boss-timer").innerHTML = "";
+                        clearInterval(interval)
+                        // self.socket.emit('BOSS-END', {
+                        //  bossHP: self.monsterCurrentHP,
+                        //  bossKilled: self.bossKilled,
+                        // })
+                    }
+            }, 100);
+}
 const getNewMonster = (id) => {
     var promise = new Promise((resolve, reject) => {
         let currentLevelMon =  Monster.levels.find(level => level.level ==  getUserData(id).data.level)
         getUserData(id).data.currentMonster = currentLevelMon.list.find((i, index) => index == (getUserData(id).data.monsterCount)) 
         // Create monster HP based on levels.
         getUserData(id).data.currentMonster.monsterCurrentHP = Math.round(10 * ((getUserData(id).data.level-1) + Math.pow(1.55, getUserData(id).data.level - 1)))
-        console.log(getUserData(id).data.currentMonster.monsterCurrentHP)
         getUserData(id).data.currentMonster.monsterMaxHP = Math.round(10 * ((getUserData(id).data.level-1) + Math.pow(1.55, getUserData(id).data.level - 1)))
-        console.log(getUserData(id).data.currentMonster.monsterMaxHP )
         if(getUserData(id).data.level % 5 === 0)
         {
             // this.startBossTimer()
-           // console.log('Boss level!')
             getUserData(id).data.bossKilled = false;
             getUserData(id).data.currentMonster.monsterCurrentHP = Math.round(10 * ((getUserData(id).data.level-1) + Math.pow(1.55, getUserData(id).data.level)) * 10)
             getUserData(id).data.currentMonster.monsterMaxHP = Math.round(10 * ((getUserData(id).data.level-1) + Math.pow(1.55, getUserData(id).data.level)) * 10)
@@ -469,9 +459,69 @@ const startAutoDPS = (socket) => {
         }  
         setTimeout(() => auto(), 100)
 }
+/// TODO CHANGE LEVEL
+const nextLevel = (socket) => {
+            getUserData(socket.id).data.level++
+            //Emit Level Change.
+            io.to(socket.id).emit('LEVEL-CHANGE', { 
+                      monsterCount : 0,
+                      goldCount : getUserData(socket.id).data.gold, 
+                      level : getUserData(socket.id).data.level, 
+                      username: getUserData(socket.id).data.username,
+                      bossFight: getUserData(socket.id).data.bossFight,
+            })  
+            if(getUserData(socket.id).data.level % 5 == 0)
+            {
+                getUserData(socket.id).data.monsterCount = 0
+                console.log('Boss level')
+                getUserData(socket.id).data.bossFight = true
+                //Start Boss timer
+                startBossTimer(socket)
+                //Emit Boss timer Socket.
+            } else {
+                getUserData(socket.id).data.monsterCount = 0
+                console.log('Regular level')
+                getUserData(socket.id).data.bossFight = false            
+            }
+}
+const failedBoss = (socket) => {
+    getUserData(socket.id).data.failedBoss = getUserData(socket.id).data.level
+    //Lower level
+    getUserData(socket.id).data.level--
+    //Set Monsters to 9, don't auto level.
+    getUserData(socket.id).data.monsterCount = 10
+    getNewMonster(socket.id).then(() => {
+            io.to(socket.id).emit('DOWN-LEVEL', { 
+                      monsterCount : 10,
+                      level : getUserData(socket.id).data.level, 
+                      currentMonster : getUserData(socket.id).data.currentMonster,
+                      username: getUserData(socket.id).data.username,
+                      bossFight: false,
+            }) 
+    })
+
+    //Enable Return to boss button
+}
+const checkBossKill = (socket) => {
+    if(getUserData(socket.id).data.currentMonster.monsterCurrentHP > 0){
+        //User failed to kill boss. Downlevel him.
+        console.log('user failed to kill boss.')
+        failedBoss(socket)
+    } else if (getUserData(socket.id).data.currentMonster <= 0){
+        //User killed the boss.
+        console.log('user killed boss!')
+        killMonster(socket)
+        //Clear timers
+    }
+}
 const killMonster = (socket) => {
+        if(getUserData(socket.id).data.bossFight){
+            // User killed the boss reset to false.
+            getUserData(socket.id).data.bossFight = false
+
+            getUserData(socket.id).data.monsterCount = 10
+        }
         getUserData(socket.id).data.canLoot = false
-        console.log('User killed monster....')
         getUserData(socket.id).data.canAttack = false;
             if(getUserData(socket.id).data.currentMonster.hasDrop){
                 let dropItems = getUserData(socket.id).data.currentMonster.hasDrop
@@ -492,40 +542,25 @@ const killMonster = (socket) => {
                     })
                 }
             }
-        //    console.log(data)
-            if(!getUserData(socket.id).data.bossFight){
-                if(getUserData(socket.id).data.monsterCount == 11){
-                    getUserData(socket.id).data.monsterCount = 1
-                }
-                if(getUserData(socket.id).data.monsterCount < 11){
+            if(getUserData(socket.id).data.monsterCount < 10 ){
                     getUserData(socket.id).data.monsterCount++
-                } else {
-                getUserData(socket.id).data.monsterCount = 1
-                }
-            } else {
-                if(getUserData(socket.id).data.bossKilled == false) {
-                    getUserData(socket.id).data.monsterCount = 10
-                }                
+            } 
+            if(getUserData(socket.id).data.monsterCount == 10 && !getUserData(socket.id).data.failedBoss){
+                   nextLevel(socket)
             }
-
-
                 let amount =  Math.round(((getUserData(socket.id).data.currentMonster.monsterMaxHP / 15) * Math.floor(((0 / 100) + 1))));
                 if(getUserData(socket.id).data.goldBonus > 0){
                   amount = Math.round(amount * getUserData(socket.id).data.goldBonus)
                 }
                 getUserData(socket.id).data.gold = getUserData(socket.id).data.gold + amount 
-                console.log(`${getUserData(socket.id).data.username} killed a monster and earned ${amount} gold!`)
                 getNewMonster(socket.id).then(() => {
-
-           console.log(getUserData(socket.id).data.currentMonster.monsterCurrentHP)
-            saveUser(getUserData(socket.id).data).then( returned => {
-                  io.to(socket.id).emit('GOLD', { 
-                    goldCount : getUserData(socket.id).data.gold,  
-                    monsterCount:  getUserData(socket.id).data.monsterCount, 
-                    socketId : socket.id, 
-                    username: getUserData(socket.id).data.username,
-                    currentMonster : getUserData(socket.id).data.currentMonster
-                     // isBoss: getUserData(socket.id).data.currentMonster.isBoss
+                    saveUser(getUserData(socket.id).data).then( returned => {
+                        io.to(socket.id).emit('GOLD', { 
+                        goldCount : getUserData(socket.id).data.gold,  
+                        monsterCount:  getUserData(socket.id).data.monsterCount, 
+                        socketId : socket.id, 
+                        username: getUserData(socket.id).data.username,
+                        currentMonster : getUserData(socket.id).data.currentMonster
                 });
                 setTimeout(() => { 
                     getUserData(socket.id).data.canLoot = true
@@ -533,7 +568,7 @@ const killMonster = (socket) => {
                   getUserData(socket.id).data.canAttack = true;
                 }, 2000);
             }).catch(e => console.log(e));
-              })
+    })
 }
 const buyHero = (id, heroName, cost, socket) => {
     var promise = new Promise((resolve, reject) => {
