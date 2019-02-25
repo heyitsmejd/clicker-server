@@ -17,10 +17,10 @@ var sessionMiddleware = expressSession({
     })
 });
 app.use(sessionMiddleware);
-
-const io = require('socket.io')(server).use(function(socket, next) {
-    sessionMiddleware(socket.request, socket.request.res, next);
-});
+const io = require('socket.io')(server)
+// const io = require('socket.io')(server).use(function(socket, next) {
+//     sessionMiddleware(socket.request, socket.request.res, next);
+// });
 const passportSocketIo = require("passport.socketio");
 app.use(bodyParser.json());       // to support JSON-encoded bodies
 app.use(bodyParser.urlencoded({     // to support URL-encoded bodies
@@ -161,6 +161,7 @@ const saveUser = (user) => {
                 equippedScroll : user.equippedScroll,
                 heroes : user.heroes,
                 failedBoss : user.failedBoss,
+                heroUpgrades : user.heroUpgrades
                // reborns : user.reborns
             }}, (err, user) => {
             resolve(user)
@@ -185,10 +186,9 @@ const getLevelCost = (user, hero) => {
       return totalLevelCost
 }
 
-let currentUsers = 0;
 let activeUsers = []
 io.on('connection', function(socket) {
-    currentUsers++; 
+    console.log(socket.id + ' connected')
     activeUsers.push({ id: socket.id, username: null })
     userData.push({socketId : socket.id, connected: true})
     socket.on('CheckUser', data => { //TODO: not send all user data, only relevant one.
@@ -213,7 +213,10 @@ io.on('connection', function(socket) {
             }
             getUserData(socket.id).data.canLoot = true
              getUserData(socket.id).data.failedBoss = null
-            // getUserData(socket.id).data.nextHero = heroes[(getUserData(socket.id).data.heroes.length + 1)]
+             // if(getUserData(socket.id).data.heroes.length < heroes.length){
+             //    getUserData(socket.id).data.nextHero = heroes[(getUserData(socket.id).data.heroes.length + 1)]
+             // }
+            // 
             getNewMonster(socket.id).then(() => {
             io.to(socket.id).emit('LOGIN', getUserData(socket.id).data)
             setTimeout(() => { 
@@ -232,6 +235,7 @@ io.on('connection', function(socket) {
         });
     })
 	  socket.on('DAMAGE', data => {
+        if(getUserData(socket.id).data.canAttack && getUserData(socket.id).data.currentMonster.monsterCurrentHP > 0){
         var amount = getUserData(socket.id).data.dpc
         
         if((getUserData(socket.id).data.currentMonster.monsterCurrentHP -  amount ) <= 0) {
@@ -242,6 +246,7 @@ io.on('connection', function(socket) {
         }
         
 	    	io.to(socket.id).emit('ATTACK', { monsterCurrentHP : getUserData(socket.id).data.currentMonster.monsterCurrentHP })
+        }
     })
     socket.on('EQUIP', data => {
         if(data.itemType == 0){
@@ -375,10 +380,10 @@ io.on('connection', function(socket) {
             
         }
     })
-
+    socket.on('BUY-SKILL', data => {
+        buyHeroUpgrade(socket, data.skillId, data.heroId)
+    })
     socket.on('disconnect', data => {
-        currentUsers--;
-        console.log(getUserData(socket.id))
         getUserData(socket.id).connected = false
         if(getUserData(socket.id).data){
             console.log('saving user')
@@ -386,14 +391,15 @@ io.on('connection', function(socket) {
                 console.log('Player disconnected : ' + getUserData(socket.id).data.username)
             })
         }
-        let findUser = activeUsers.findIndex(i => i.id == socket.id)
-        activeUsers.splice(findUser,1)
-        console.log('Current Players: ' + currentUsers)
+        let findUser = activeUsers.filter(i => i.id != socket.id)
+        activeUsers = findUser
+        console.log('Current Players: ' + activeUsers.length)
     })
 });
 const startBossTimer = (socket) => {
             getUserData(socket.id).data.bossFight = true;
             console.log('starting boss timer...')
+
             var endTime = new Date(); 
             endTime = new Date(endTime .getTime() + 30000);
             var interval = setInterval(function() {
@@ -403,31 +409,39 @@ const startBossTimer = (socket) => {
                     {
                         distance = 0
                     }
-                    io.to(socket.id).emit('BOSS-TIMER', { currentTime : (distance / 1000).toFixed(2)});   
+                    io.to(socket.id).emit('BOSS-TIMER', { currentTime : (distance / 1000).toFixed(2), canAttack : true});   
                     if(!getUserData(socket.id).data.bossFight) {
-
                         console.log('boss fight is over')
-                        // document.getElementById("boss-timer").innerHTML = "";
-                        
                         clearInterval(interval)
                     }
                     else if(now > endTime)
                     {
                         failedBoss(socket)
                         console.log('times up, user failed.')
-                        // document.getElementById("boss-timer").innerHTML = "";
                         clearInterval(interval)
-                        // self.socket.emit('BOSS-END', {
-                        //  bossHP: self.monsterCurrentHP,
-                        //  bossKilled: self.bossKilled,
-                        // })
                     }
-            }, 100);
+            }, 75);
 }
 const getNewMonster = (id) => {
     var promise = new Promise((resolve, reject) => {
         let currentLevelMon =  Monster.levels.find(level => level.level ==  getUserData(id).data.level)
-        getUserData(id).data.currentMonster = currentLevelMon.list.find((i, index) => index == (getUserData(id).data.monsterCount)) 
+        if(getUserData(id).data.failedBoss != null) {
+            console.log('user failed boss.')
+            let randomVal = Math.floor(Math.random() * currentLevelMon.list.length)
+            console.log(randomVal)
+            let curMonster = getUserData(id).data.currentMonster
+            getUserData(id).data.currentMonster = currentLevelMon.list.find((i, index) => index == randomVal) 
+            while(curMonster.name == getUserData(id).data.currentMonster){
+                console.log('new monster has same name, randomizing..')
+                randomVal = Math.floor(Math.random() * currentLevelMon.list.length)
+                console.log(randomVal)
+                getUserData(id).data.currentMonster = currentLevelMon.list.find((i, index) => index == randomVal) 
+            }
+            
+        } else {
+            getUserData(id).data.currentMonster = currentLevelMon.list.find((i, index) => index == (getUserData(id).data.monsterCount)) 
+        }
+        
         // Create monster HP based on levels.
         getUserData(id).data.currentMonster.monsterCurrentHP = Math.round(10 * ((getUserData(id).data.level-1) + Math.pow(1.55, getUserData(id).data.level - 1)))
         getUserData(id).data.currentMonster.monsterMaxHP = Math.round(10 * ((getUserData(id).data.level-1) + Math.pow(1.55, getUserData(id).data.level - 1)))
@@ -448,14 +462,18 @@ const startAutoDPS = (socket) => {
                 return
             }
             if(getUserData(socket.id).data.currentMonster.monsterCurrentHP > 0 && getUserData(socket.id).data.canAttack) {
-                getUserData(socket.id).data.currentMonster.monsterCurrentHP = getUserData(socket.id).data.currentMonster.monsterCurrentHP - getUserData(socket.id).data.dps
+                if((getUserData(socket.id).data.dps/4) > getUserData(socket.id).data.currentMonster.monsterCurrentHP){
+                    getUserData(socket.id).data.currentMonster.monsterCurrentHP = 0
+                } else {
+                    getUserData(socket.id).data.currentMonster.monsterCurrentHP = getUserData(socket.id).data.currentMonster.monsterCurrentHP - (getUserData(socket.id).data.dps/4)
+                }
                 io.to(socket.id).emit('ATTACK', { monsterCurrentHP : getUserData(socket.id).data.currentMonster.monsterCurrentHP});    
             }
             if(getUserData(socket.id).data.currentMonster.monsterCurrentHP <= 0){
                 killMonster(socket)
 
             }
-            setTimeout(() => auto(), 1000)
+            setTimeout(() => auto(), 250)
         }  
         setTimeout(() => auto(), 100)
 }
@@ -476,7 +494,7 @@ const nextLevel = (socket) => {
                 console.log('Boss level')
                 getUserData(socket.id).data.bossFight = true
                 //Start Boss timer
-                startBossTimer(socket)
+                setTimeout(() => startBossTimer(socket), 2500)
                 //Emit Boss timer Socket.
             } else {
                 getUserData(socket.id).data.monsterCount = 0
@@ -498,6 +516,11 @@ const failedBoss = (socket) => {
                       username: getUserData(socket.id).data.username,
                       bossFight: false,
             }) 
+                            setTimeout(() => { 
+
+                          io.to(socket.id).emit('READY', { canAttack: true});
+                          getUserData(socket.id).data.canAttack = true; 
+                }, 2000);
     })
 
     //Enable Return to boss button
@@ -564,8 +587,8 @@ const killMonster = (socket) => {
                 });
                 setTimeout(() => { 
                     getUserData(socket.id).data.canLoot = true
-                  io.to(socket.id).emit('READY', { canAttack: true});
-                  getUserData(socket.id).data.canAttack = true;
+                          io.to(socket.id).emit('READY', { canAttack: true});
+                          getUserData(socket.id).data.canAttack = true; 
                 }, 2000);
             }).catch(e => console.log(e));
     })
@@ -626,7 +649,95 @@ const buyHero = (id, heroName, cost, socket) => {
     })
  return promise
 }
-var heroes = [
+// Item types 
+// 0 : Weapon
+// 1 : Amulet 
+// 2 : Ring
+// 3 : Scroll
+
+// Bonus Types 
+// 0 : Gold 
+// 1 : DPS Overall
+// 2 : DPC All
+// 3 : Souls 
+// 4 : DPS ALL HERO
+// 5 : DPS HERO BONUS  || This works like this, BASE HERO DPS * (SINGLE HERO BONUS + EXTRA BONUS) e.g 100 * 
+// 6 : GOLD BONUS HERO
+const buyHeroUpgrade = (socket, heroId, skillId) => {
+    console.log(heroId, skillId)
+    //find skill ID
+    let skill = heroUpgrades.find(i => i.heroId == heroId && i.skillId == skillId)
+    console.log(skill)
+    let hero = getUserData(socket.id).data.heroes.find(i => i.id == heroId)
+    //Check money available
+    if(getUserData(socket.id).data.gold >= skill.cost && hero.level >= skill.requiredLevel){
+        console.log(`We've got enough money and are high enough level`)
+        //Check uer doesn't skill.
+        let hasSkill = getUserData(socket.id).data.heroUpgrades.some(i => i.heroId == heroId && i.skillId == skillId)
+        console.log(hasSkill)
+        if(!hasSkill){
+            // Purchase skill TODO
+            getUserData(socket.id).data.gold -= skill.cost
+            getUserData(socket.id).data.heroUpgrades.push(skill)
+            console.log('we bought the skill and spent ' + skill.cost)
+            if(skill.bonusType == 5){
+                hero.bonusDps += skill.bonusAmount
+            }
+            else if(skill.bonusType == 4){
+                 getUserData(socket.id).data.heroDpsBonus += skill.bonusAmount
+            }
+            else if(skill.bonusType == 6){
+                 getUserData(socket.id).data.heroGoldBonus += skill.bonusAmount
+            }
+        }  else {
+            console.log('user owns this skill already.')
+           // console.log(hasSkill)
+        } 
+    }
+}
+
+const updateDps = (socket) => {
+    // Calculate Individual hero DPS
+    getUserData(socket.id).data.heroes.forEach(hero => {
+        let total = hero.dps
+        if(hero.bonusDps > 0){
+
+        }
+    })
+    // Calculate Total DPS
+}
+
+const heroUpgrades = [
+   {
+       heroId : 0,
+       skillId : 0,
+       name : 'One for all',
+       icon : 'blah.jpg',
+       bonusType : 5,
+       bonusAmount : 0.25,
+       cost : 1,
+       requiredLevel : 10,
+   },{
+       heroId : 0,
+       skillId : 1,
+       name : 'Super Beam',
+       icon : 'blah.jpg',
+       bonusType : 4,
+       bonusAmount : 0.50,
+       cost : 1,
+       requiredLevel : 25,
+   },{
+       heroId : 0,
+       skillId : 2,
+       name : 'Limit Breaker',
+       icon : 'blah.jpg',
+       bonusType : 2,
+       bonusAmount : 0.25,
+       cost : 1,
+       requiredLevel : 50,
+   }
+]
+const heroes = [
       { name: 'Luna',
         fullImg: 'luna.jpg',
         headImg: 'luna-head.jpg',
@@ -634,36 +745,48 @@ var heroes = [
         level: 1,
         baseDps: 1,
         baseCost: 10,
+        bonusDps: 0,
+        id: 0,
+        upgrades: [],
         cost: 10 },
       { name: 'Suyeon',
         fullImg: 'suyeon.jpg',
         headImg: 'suyeon-head.jpg',
         dps: 5,
+        bonusDps: 0,
         level: 1,
         baseDps: 5,
+        id: 1,
         baseCost: 49,
         cost: 49 },
       { name: 'Yukki',
         fullImg: 'yukki.jpg',
+        bonusDps: 0,
         headImg: 'yukki-head.jpg',
         dps: 19,
         level: 1,
         baseDps: 19,
+        id: 2,
         baseCost: 240,
         cost: 240 },
       { name: 'Mikon',
         fullImg: 'mikon.jpg',
+        bonusDps: 0,
         headImg: 'mikon-head.jpg',
         dps: 70,
         level: 1,
         baseDps: 70,
         baseCost: 1176,
+        id: 3,
         cost: 1176 },
+
       { name: 'Fate',
         fullImg: 'fate.jpg',
+        bonusDps: 0,
         headImg: 'fate-head.jpg',
         dps: 257,
         level: 1,
+        id: 4,
         baseDps: 257,
         baseCost: 5762,
         cost: 5762 },
@@ -674,29 +797,56 @@ var heroes = [
         level: 1,
         baseCost: 28234,
         baseDps: 941,
+        id: 5,
         cost: 28234 },
         { name: 'Kayle',
         fullImg: 'albedo.jpg',
+        bonusDps: 0,
         headImg: 'kayle-head.jpg',
         dps: 3444,
         level: 1,
+        id: 6,
         baseCost: 138346,
         baseDps: 3444,
         cost: 138346 },
         { name: 'Rie',
         fullImg: 'albedo.jpg',
         headImg: 'rie-head.jpg',
+        bonusDps: 0,
         dps: 12605,
         level: 1,
         baseCost: 677895,
         baseDps: 12605,
+        id: 7,
         cost: 677895 },
         { name: 'Nell',
         fullImg: 'albedo.jpg',
+        bonusDps: 0,
         headImg: 'nell-head.jpg',
         dps: 46134,
         level: 1,
         baseCost: 3321685,
+        id: 8,
         baseDps: 46134,
         cost: 3321685 },
+        { name: 'Boop',
+        bonusDps: 0,
+        fullImg: 'boop.jpg',
+        headImg: 'boop-head.jpg',
+        dps: 168849,
+        id: 9,
+        level: 1,
+        baseCost: 16276253,
+        baseDps: 168849,
+        cost: 16276253 },
+        { name: 'Vel',
+        bonusDps: 0,
+        fullImg: 'vel.jpg',
+        headImg: 'vel-head.jpg',
+        dps: 617982,
+        level: 1,
+        id: 10,
+        baseCost: 79753623,
+        baseDps: 617982,
+        cost: 79753623 },
       ]
