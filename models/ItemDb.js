@@ -21,23 +21,23 @@ itemDb.items = [
     icon: 'broadsword.jpg',
     bonusType: 2,
     bonusAmount: 3,
-    chance: 0
+    chance: 3
  }, {
     id : 2,
     itemType: 0,
     name: 'Demonic Blade',
     icon: 'demonsword.jpg',
     bonusType: 2,
-    bonusAmount: 783823,
-    chance: 0
+    bonusAmount: 420,
+    chance: 0.5
  },{
     id : 3,
     itemType: 2,
     name: 'Gold Ring',
     icon: 'goldring.jpg',
     bonusType: 0,
-    bonusAmount: 266644444455.33,
-    chance: 0
+    bonusAmount: 500,
+    chance: 2
  }
 ]
 // monsters.checkPlaceOwnership = function(req, res, next)

@@ -10,7 +10,9 @@ monster.initialize = function(){
 	var prevMon = false;
 	for(var i = 0; i < 100; i++){
 		// if(i % 5 === 0){
-
+		if(i == 1){
+			console.log('Level building started.')
+		}
 		// } else {}
 		var levelObj = {}
 		levelObj.level = i
@@ -22,7 +24,7 @@ monster.initialize = function(){
 			monsterObj.hasDrop = [1,2,3]
 			if(prevMon){
 			while(monsterObj.name == prevMon.name || monsterObj.image == prevMon.image){
-				console.log('we found two consecutive monsters with the same name or image, randomizing again.')
+			//	console.log('we found two consecutive monsters with the same name or image, randomizing again.')
 				monsterObj.name = verbs[Math.floor(Math.random() * 11)] + ' Boop'
 				monsterObj.image = images[Math.floor(Math.random() * 2)]
 			}}
@@ -30,7 +32,9 @@ monster.initialize = function(){
 			prevMon = monsterObj
 		}
 		monster.levels.push(levelObj)
-		console.log('Created Level ' + i)
+		if(i == 100){
+			console.log('Done building levels.')
+		}
 	}
 
 }
