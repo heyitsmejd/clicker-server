@@ -5,8 +5,8 @@ var monster = {};
 monster.levels = []
 monster.initialize = function(){
 	console.log('Starting level creation...')
-	const verbs = ['Sexy', 'Dangerous', 'Cunning', 'Wild', 'Extreme', 'Fiesty', 'Crazy', 'Sleepy', 'Cutthroat', 'Energetic', 'Smiling']
-	const images = ['demongirl3.png','demongirl2.png','demongirl.png']
+	const verbs = ['Dangerous', 'Cunning', 'Wild', 'Extreme', 'Fiesty', 'Crazy', 'Sleepy', 'Cutthroat', 'Energetic', 'Smiling']
+	const images = ['monsters/3.png', 'slug.svg']
 	var prevMon = false;
 	for(var i = 0; i < 100; i++){
 		// if(i % 5 === 0){

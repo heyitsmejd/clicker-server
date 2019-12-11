@@ -1,3 +1,4 @@
+//#!/usr/bin/env node
 const express = require('express');
 const app = express();
 const mongoose = require('mongoose')
@@ -79,6 +80,7 @@ passport.use('local', new LocalStrategy(
     });
 }));
 app.post('/api/register', (req, res) => {
+    console.log()
 	createNewUser(req.body).then((returned) => {
             loginProcess(req.body.socket, req.body.username)
 			res.send(req.body.username)
@@ -511,7 +513,7 @@ const startAutoDPS = (socketId) => {
                     killMonster(socketId)
 
                 }
-                
+                 setTimeout(() => auto(),  1000)
                 
             }}
         }  
